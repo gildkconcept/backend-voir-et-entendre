@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const SocialLink = require('../models/SocialLink');
 
-// ✅ Configuration des liens
+// Configuration des liens
 const appLinks = {
     'instagram': {
         scheme: 'instagram://user?username=eglise_mega',
@@ -53,7 +53,6 @@ function getIconForPlatform(platform) {
     return icons[platform] || '🔗';
 }
 
-// ✅ Route de redirection
 router.get('/:platform', async (req, res) => {
     try {
         const { platform } = req.params;
@@ -80,7 +79,6 @@ router.get('/:platform', async (req, res) => {
             return res.redirect(302, link.url);
         }
 
-        // Récupérer le lien dans la base de données
         const link = await SocialLink.findOne({
             where: { platform, is_active: true }
         });
@@ -89,7 +87,6 @@ router.get('/:platform', async (req, res) => {
             return res.status(404).json({ error: 'Lien non trouvé' });
         }
 
-        // Enregistrer le clic
         try {
             const { trackClick } = require('../controllers/clickController');
             await trackClick({
@@ -101,23 +98,22 @@ router.get('/:platform', async (req, res) => {
             console.error('Erreur enregistrement clic:', err.message);
         }
 
-        // Détecter le type d'appareil
         const userAgent = req.headers['user-agent'] || '';
         const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|Opera Mini|IEMobile/i.test(userAgent);
         const appInfo = appLinks[platform];
 
-        // Desktop → redirection directe
         if (!isMobile || !appInfo?.scheme) {
             return res.redirect(302, link.url);
         }
 
-        // ✅ MOBILE → Page de redirection avec boutons (VERSION CORRIGÉE)
+        // ✅ NOUVELLE APPROCHE : Redirection avec méta refresh + boutons
         const html = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Redirection ${link.title}</title>
+    <meta http-equiv="refresh" content="2; url=${appInfo.fallback}">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -147,20 +143,21 @@ router.get('/:platform', async (req, res) => {
             animation: spin 0.8s linear infinite;
             margin: 16px auto;
         }
-        .hidden { display: none !important; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .title { font-size: 20px; font-weight: 700; color: #1a1a1a; }
         .subtitle { font-size: 14px; color: #888; margin: 6px 0 16px 0; }
         .btn {
-            display: block;
-            width: 100%;
-            padding: 14px;
+            display: inline-block;
+            padding: 14px 30px;
             border: none;
             border-radius: 14px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
+            text-decoration: none;
+            text-align: center;
+            width: 100%;
         }
         .btn:active { transform: scale(0.97); }
         .btn-primary {
@@ -179,126 +176,56 @@ router.get('/:platform', async (req, res) => {
         }
         .brand span { color: ${link.color || '#2563EB'}; font-weight: 600; }
         .footer-text { font-size: 12px; color: #ccc; margin-top: 6px; }
+        .btn-group {
+            margin-top: 16px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="icon">${getIconForPlatform(platform)}</div>
-        <div class="loader" id="loader"></div>
+        <div class="loader"></div>
         <div class="title">${link.title}</div>
-        <div class="subtitle">Ouverture de l'application...</div>
+        <div class="subtitle">Redirection en cours...</div>
         
-        <button class="btn btn-primary" id="openAppBtn">📱 Ouvrir l'application</button>
-        <button class="btn btn-secondary" id="openWebBtn">🌐 Ouvrir dans le navigateur</button>
+        <div class="btn-group">
+            <a href="${appInfo.scheme}" class="btn btn-primary" id="openAppBtn">📱 Ouvrir l'application</a>
+            <a href="${appInfo.fallback}" class="btn btn-secondary" id="openWebBtn">🌐 Ouvrir dans le navigateur</a>
+        </div>
         
         <div class="brand">Voir et Entendre • <span>${link.title}</span></div>
-        <div class="footer-text" id="statusText">Redirection automatique...</div>
+        <div class="footer-text">Si la redirection ne fonctionne pas, appuyez sur un bouton</div>
     </div>
 
     <script>
-        const appScheme = '${appInfo.scheme}';
-        const webLink = '${appInfo.fallback}';
-        const timeoutDuration = 4000;
-
-        let appOpened = false;
-        let fallbackTimer = null;
-        let autoStartTimer = null;
-
-        function redirectToWeb() {
-            document.getElementById('statusText').textContent = 'Redirection vers le site web...';
-            document.getElementById('loader').classList.add('hidden');
-            setTimeout(() => {
-                window.location.href = webLink;
-            }, 300);
-        }
-
+        // Essayer d'ouvrir l'application automatiquement
         function openApp() {
-            document.getElementById('statusText').textContent = 'Tentative d\'ouverture de l\'application...';
-            document.getElementById('loader').classList.add('hidden');
-
-            // Méthode 1: iframe
+            // Méthode 1: via iframe
             try {
                 const iframe = document.createElement('iframe');
                 iframe.style.display = 'none';
-                iframe.src = appScheme;
+                iframe.src = '${appInfo.scheme}';
                 document.body.appendChild(iframe);
                 setTimeout(() => {
                     if (document.body.contains(iframe)) {
                         document.body.removeChild(iframe);
                     }
-                }, 1500);
-            } catch(e) {
-                console.log('iframe method failed:', e);
-            }
+                }, 2000);
+            } catch(e) {}
 
-            // Méthode 2: window.open
+            // Méthode 2: via window.location
             try {
-                const win = window.open(appScheme, '_blank');
-                if (win) {
-                    setTimeout(() => {
-                        if (!win.closed) {
-                            win.close();
-                        }
-                    }, 1000);
-                }
-            } catch(e) {
-                console.log('window.open method failed:', e);
-            }
-
-            // Méthode 3: location.assign
-            try {
-                window.location.assign(appScheme);
-            } catch(e) {
-                console.log('location.assign method failed:', e);
-            }
-
-            // Détection de l'ouverture de l'application
-            let appDetected = false;
-            const visibilityHandler = () => {
-                if (document.hidden) {
-                    appDetected = true;
-                    document.removeEventListener('visibilitychange', visibilityHandler);
-                    document.getElementById('statusText').textContent = '✅ Application ouverte !';
-                    clearTimeout(fallbackTimer);
-                }
-            };
-            document.addEventListener('visibilitychange', visibilityHandler);
-
-            // Fallback
-            fallbackTimer = setTimeout(() => {
-                document.removeEventListener('visibilitychange', visibilityHandler);
-                if (!appDetected) {
-                    redirectToWeb();
-                }
-            }, timeoutDuration);
+                setTimeout(() => {
+                    window.location.href = '${appInfo.scheme}';
+                }, 100);
+            } catch(e) {}
         }
 
-        // Démarrage automatique
-        autoStartTimer = setTimeout(() => {
-            openApp();
-        }, 800);
+        // Démarrer automatiquement après 500ms
+        setTimeout(openApp, 500);
 
-        // Bouton "Ouvrir l'application"
-        document.getElementById('openAppBtn').addEventListener('click', function(e) {
-            e.preventDefault();
-            clearTimeout(autoStartTimer);
-            clearTimeout(fallbackTimer);
-            openApp();
-        });
-
-        // Bouton "Ouvrir dans le navigateur"
-        document.getElementById('openWebBtn').addEventListener('click', function(e) {
-            e.preventDefault();
-            clearTimeout(autoStartTimer);
-            clearTimeout(fallbackTimer);
-            redirectToWeb();
-        });
-
-        // Nettoyage
-        window.addEventListener('beforeunload', function() {
-            clearTimeout(autoStartTimer);
-            clearTimeout(fallbackTimer);
-        });
+        // Si l'application ne s'ouvre pas, le meta-refresh fera le fallback
+        // Les boutons permettent de choisir manuellement
     </script>
 </body>
 </html>`;
