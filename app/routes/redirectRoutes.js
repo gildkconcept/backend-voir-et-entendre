@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const SocialLink = require('../models/SocialLink');
 
-// ✅ Configuration des liens - AJOUT DE academiedelagrace
+// ✅ Configuration des liens
 const appLinks = {
     'instagram': {
         scheme: 'instagram://user?username=eglise_mega',
@@ -33,10 +33,9 @@ const appLinks = {
         scheme: null,
         fallback: 'https://www.messagedegrace.org/'
     },
-    // ✅ NOUVEAU : academiedelagrace (site web)
     'academiedelagrace': {
-        scheme: null,  // ← PAS d'application mobile
-        fallback: 'https://academiedelagrace.org/'  // ← Mets le bon lien
+        scheme: null,
+        fallback: 'https://academiedelagrace.org/'
     }
 };
 
@@ -49,7 +48,7 @@ function getIconForPlatform(platform) {
         'whatsapp': '💬',
         'telegram': '✈️',
         'website': '🌐',
-        'academiedelagrace': '🎓'  // ✅ Icône pour l'académie
+        'academiedelagrace': '🎓'
     };
     return icons[platform] || '🔗';
 }
@@ -59,7 +58,7 @@ router.get('/:platform', async (req, res) => {
     try {
         const { platform } = req.params;
 
-        // ✅ SITES WEB → Redirection directe (website ET academiedelagrace)
+        // ✅ SITES WEB → Redirection directe
         const webPlatforms = ['website', 'academiedelagrace'];
         if (webPlatforms.includes(platform)) {
             try {
@@ -72,7 +71,6 @@ router.get('/:platform', async (req, res) => {
             } catch (err) {
                 console.error('Erreur enregistrement clic:', err.message);
             }
-            // Rediriger vers l'URL correspondante
             const link = await SocialLink.findOne({
                 where: { platform, is_active: true }
             });
@@ -82,7 +80,6 @@ router.get('/:platform', async (req, res) => {
             return res.redirect(302, link.url);
         }
 
-        // ... (reste du code inchangé)
         // Récupérer le lien dans la base de données
         const link = await SocialLink.findOne({
             where: { platform, is_active: true }
@@ -114,7 +111,7 @@ router.get('/:platform', async (req, res) => {
             return res.redirect(302, link.url);
         }
 
-        // ✅ MOBILE → Page de redirection avec boutons
+        // ✅ MOBILE → Page de redirection avec boutons (VERSION CORRIGÉE)
         const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -150,6 +147,7 @@ router.get('/:platform', async (req, res) => {
             animation: spin 0.8s linear infinite;
             margin: 16px auto;
         }
+        .hidden { display: none !important; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .title { font-size: 20px; font-weight: 700; color: #1a1a1a; }
         .subtitle { font-size: 14px; color: #888; margin: 6px 0 16px 0; }
@@ -186,7 +184,7 @@ router.get('/:platform', async (req, res) => {
 <body>
     <div class="container">
         <div class="icon">${getIconForPlatform(platform)}</div>
-        <div class="loader"></div>
+        <div class="loader" id="loader"></div>
         <div class="title">${link.title}</div>
         <div class="subtitle">Ouverture de l'application...</div>
         
@@ -194,51 +192,112 @@ router.get('/:platform', async (req, res) => {
         <button class="btn btn-secondary" id="openWebBtn">🌐 Ouvrir dans le navigateur</button>
         
         <div class="brand">Voir et Entendre • <span>${link.title}</span></div>
-        <div class="footer-text">Redirection automatique...</div>
+        <div class="footer-text" id="statusText">Redirection automatique...</div>
     </div>
 
     <script>
         const appScheme = '${appInfo.scheme}';
         const webLink = '${appInfo.fallback}';
+        const timeoutDuration = 4000;
+
         let appOpened = false;
+        let fallbackTimer = null;
+        let autoStartTimer = null;
+
+        function redirectToWeb() {
+            document.getElementById('statusText').textContent = 'Redirection vers le site web...';
+            document.getElementById('loader').classList.add('hidden');
+            setTimeout(() => {
+                window.location.href = webLink;
+            }, 300);
+        }
 
         function openApp() {
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = appScheme;
-            document.body.appendChild(iframe);
-            
+            document.getElementById('statusText').textContent = 'Tentative d\'ouverture de l\'application...';
+            document.getElementById('loader').classList.add('hidden');
+
+            // Méthode 1: iframe
+            try {
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = appScheme;
+                document.body.appendChild(iframe);
+                setTimeout(() => {
+                    if (document.body.contains(iframe)) {
+                        document.body.removeChild(iframe);
+                    }
+                }, 1500);
+            } catch(e) {
+                console.log('iframe method failed:', e);
+            }
+
+            // Méthode 2: window.open
+            try {
+                const win = window.open(appScheme, '_blank');
+                if (win) {
+                    setTimeout(() => {
+                        if (!win.closed) {
+                            win.close();
+                        }
+                    }, 1000);
+                }
+            } catch(e) {
+                console.log('window.open method failed:', e);
+            }
+
+            // Méthode 3: location.assign
+            try {
+                window.location.assign(appScheme);
+            } catch(e) {
+                console.log('location.assign method failed:', e);
+            }
+
+            // Détection de l'ouverture de l'application
+            let appDetected = false;
             const visibilityHandler = () => {
                 if (document.hidden) {
-                    appOpened = true;
+                    appDetected = true;
                     document.removeEventListener('visibilitychange', visibilityHandler);
+                    document.getElementById('statusText').textContent = '✅ Application ouverte !';
+                    clearTimeout(fallbackTimer);
                 }
             };
             document.addEventListener('visibilitychange', visibilityHandler);
-            
-            setTimeout(() => {
+
+            // Fallback
+            fallbackTimer = setTimeout(() => {
                 document.removeEventListener('visibilitychange', visibilityHandler);
-                if (document.body.contains(iframe)) {
-                    document.body.removeChild(iframe);
+                if (!appDetected) {
+                    redirectToWeb();
                 }
-                if (!appOpened) {
-                    window.location.href = webLink;
-                }
-            }, 600);
+            }, timeoutDuration);
         }
 
-        const autoTimer = setTimeout(openApp, 1000);
+        // Démarrage automatique
+        autoStartTimer = setTimeout(() => {
+            openApp();
+        }, 800);
 
+        // Bouton "Ouvrir l'application"
         document.getElementById('openAppBtn').addEventListener('click', function(e) {
             e.preventDefault();
-            clearTimeout(autoTimer);
+            clearTimeout(autoStartTimer);
+            clearTimeout(fallbackTimer);
             openApp();
         });
 
+        // Bouton "Ouvrir dans le navigateur"
         document.getElementById('openWebBtn').addEventListener('click', function(e) {
             e.preventDefault();
-            clearTimeout(autoTimer);
-            window.location.href = webLink;
+            clearTimeout(autoStartTimer);
+            clearTimeout(fallbackTimer);
+            redirectToWeb();
+        });
+
+        // Nettoyage
+        window.addEventListener('beforeunload', function() {
+            clearTimeout(autoStartTimer);
+            clearTimeout(fallbackTimer);
         });
     </script>
 </body>
