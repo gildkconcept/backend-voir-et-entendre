@@ -8,6 +8,7 @@ const errorHandler = require('./app/middleware/errorHandler');
 // Routes
 const linkRoutes = require('./app/routes/linkRoutes');
 const clickRoutes = require('./app/routes/clickRoutes');
+const redirectRoutes = require('./app/routes/redirectRoutes'); // ✅ NOUVEAU
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use(morgan('dev'));
 // Routes
 app.use('/api/links', linkRoutes);
 app.use('/api/click', clickRoutes);
+app.use('/redirect', redirectRoutes); // ✅ NOUVEAU - Route de redirection
 
 // Route de santé
 app.get('/health', (req, res) => {
@@ -50,6 +52,7 @@ app.get('/', (req, res) => {
         endpoints: {
             links: '/api/links',
             click: '/api/click (POST)',
+            redirect: '/redirect/:platform',
             health: '/health'
         }
     });
