@@ -8,7 +8,8 @@ const errorHandler = require('./app/middleware/errorHandler');
 // Routes
 const linkRoutes = require('./app/routes/linkRoutes');
 const clickRoutes = require('./app/routes/clickRoutes');
-const redirectRoutes = require('./app/routes/redirectRoutes'); // ✅ NOUVEAU
+const redirectRoutes = require('./app/routes/redirectRoutes');
+const visitRoutes = require('./app/routes/visitRoutes'); // ✅ NOUVEAU - Compteur de visiteurs
 
 const app = express();
 
@@ -32,7 +33,8 @@ app.use(morgan('dev'));
 // Routes
 app.use('/api/links', linkRoutes);
 app.use('/api/click', clickRoutes);
-app.use('/redirect', redirectRoutes); // ✅ NOUVEAU - Route de redirection
+app.use('/redirect', redirectRoutes);
+app.use('/api/visits', visitRoutes); // ✅ NOUVEAU - Route des visites
 
 // Route de santé
 app.get('/health', (req, res) => {
@@ -53,6 +55,8 @@ app.get('/', (req, res) => {
             links: '/api/links',
             click: '/api/click (POST)',
             redirect: '/redirect/:platform',
+            visits: '/api/visits (POST)',
+            stats: '/api/visits/stats (GET)',
             health: '/health'
         }
     });
